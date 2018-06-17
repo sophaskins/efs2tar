@@ -10,7 +10,8 @@ import (
 )
 
 func main() {
-	file, err := os.Open("/home/sophaskins/Downloads/IRIS_Development_Option_5.3.iso")
+	path := os.Args[1]
+	file, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -26,14 +27,19 @@ func main() {
 	}
 	vh := sgi.NewVolumeHeader(b)
 
-	scs.Dump(vh)
+	p := vh.Partitions[7]
+	fs := efs.NewFilesystem(file, p.Blocks, p.First)
 
-	offset := 64
-	blocks := make([]efs.BasicBlock, 4)
-	for i := 0; i < 4; i++ {
-		blocks[i] = efs.NewBasicBlock(b[512*(i+offset) : 512*(i+offset)+512])
-	}
+	//	scs.Dump(fs.SuperBlock())
 
-	sb := efs.NewSuperBlock(blocks[1])
-	scs.Dump(sb)
+	scs.Dump(fs.RootInode())
+
+	//	offset := 64
+	//	blocks := make([]efs.BasicBlock, 4)
+	//	for i := 0; i < 4; i++ {
+	//		blocks[i] = efs.NewBasicBlock(b[512*(i+offset) : 512*(i+offset)+512])
+	//	}
+	//
+	//	sb := efs.NewSuperBlock(blocks[1])
+	//	scs.Dump(sb.FSName)
 }
