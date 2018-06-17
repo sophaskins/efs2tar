@@ -80,9 +80,21 @@ func (fs Filesystem) FirstCG() CylinderGroup {
 	return fs.NewCylinderGroup(blocks)
 }
 
+func (fs Filesystem) InodeForIndex(inodeIndex int32) Inode {
+	sb := fs.SuperBlock()
+	inodesPerBB := int32(4)
+	inodeBlocksPerCG := int32(sb.CGInodeSize)
+	inodeCGIndex := inodeIndex / (inodeBlocksPerCG * inodesPerBB)
+	inodeBBinCG := inodeIndex % (inodeBlocksPerCG * inodesPerBB) / inodesPerBB
+	bbIndex := sb.FirstCG + inodeCGIndex*sb.CGSize + inodeBBinCG
+	bb := fs.BlockAt(bbIndex)
+
+	offsetInBB := inodeIndex & (inodesPerBB - 1)
+	return bb.ToInodes()[offsetInBB]
+}
+
 func (fs Filesystem) RootInode() Inode {
-	// apparently the zeroth inode...isn't really a thing
-	return fs.FirstCG().Inodes()[1]
+	return fs.InodeForIndex(2)
 }
 
 func (fs Filesystem) NewCylinderGroup(blocks []BasicBlock) CylinderGroup {
@@ -90,4 +102,21 @@ func (fs Filesystem) NewCylinderGroup(blocks []BasicBlock) CylinderGroup {
 		blocks: blocks,
 		fs:     &fs,
 	}
+}
+
+func (fs Filesystem) BlockAt(index int32) BasicBlock {
+	rawOffset := int64((fs.offset + index) * BlockSize)
+	bb := BasicBlock{}
+	fs.device.ReadAt(bb[:], rawOffset)
+
+	return bb
+}
+
+func (fs Filesystem) BlocksAt(index int32, length int32) []BasicBlock {
+	blocks := make([]BasicBlock, length)
+	for i := 0; i < int(length); i++ {
+		blocks[i] = fs.BlockAt(index + int32(i))
+	}
+
+	return blocks
 }

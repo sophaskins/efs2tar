@@ -22,7 +22,7 @@ type Inode struct {
 	NumExtents int16
 	Version    uint8
 	Spare      uint8
-	Payload    [8]byte // this is a union struct
+	Payload    [96]byte // this is a union struct
 }
 
 func NewBasicBlock(raw []byte) BasicBlock {
@@ -32,9 +32,32 @@ func NewBasicBlock(raw []byte) BasicBlock {
 	return bb
 }
 
-func (bb BasicBlock) ToInode() Inode {
+func (bb BasicBlock) ToInodes() []Inode {
 	r := bytes.NewReader(bb[:])
-	inode := Inode{}
-	binary.Read(r, binary.BigEndian, &inode)
-	return inode
+	inodes := make([]Inode, 4)
+	for i := 0; i < 4; i++ {
+		binary.Read(r, binary.BigEndian, &inodes[i])
+	}
+	return inodes
+}
+
+const DirectExtentsLimit = 12
+
+func (in Inode) Extents() []Extent {
+	extents := make([]Extent, in.NumExtents)
+	if in.NumExtents <= DirectExtentsLimit {
+		for i := 0; i < int(in.NumExtents); i++ {
+			extents[i] = NewExtent(in.Payload[8*i : 8*(i+1)])
+		}
+	}
+
+	return extents
+}
+
+func (bb BasicBlock) ToDirectory() Directory {
+	d := Directory{}
+	r := bytes.NewReader(bb[:])
+	binary.Read(r, binary.BigEndian, &d)
+
+	return d
 }

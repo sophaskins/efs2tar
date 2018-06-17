@@ -30,16 +30,12 @@ func main() {
 	p := vh.Partitions[7]
 	fs := efs.NewFilesystem(file, p.Blocks, p.First)
 
-	//	scs.Dump(fs.SuperBlock())
-
-	scs.Dump(fs.RootInode())
-
-	//	offset := 64
-	//	blocks := make([]efs.BasicBlock, 4)
-	//	for i := 0; i < 4; i++ {
-	//		blocks[i] = efs.NewBasicBlock(b[512*(i+offset) : 512*(i+offset)+512])
-	//	}
-	//
-	//	sb := efs.NewSuperBlock(blocks[1])
-	//	scs.Dump(sb.FSName)
+	rootInode := fs.RootInode()
+	scs.Dump(rootInode)
+	rootInodeExtents := rootInode.Extents()
+	scs.Dump(rootInodeExtents)
+	blocks := fs.BlocksAt(int32(rootInodeExtents[0].Block), int32(rootInodeExtents[0].Length))
+	for _, b := range blocks {
+		scs.Dump(b.ToDirectory().Entries())
+	}
 }
