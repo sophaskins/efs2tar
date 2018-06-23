@@ -7,6 +7,7 @@ import (
 )
 
 const BlockSize = 512
+const VolumeHeaderMagic = 0x0BE5A941
 const NormalMagicNumber = 0x00072959
 const GrownMagicNumber = 0x0007295A
 
@@ -41,12 +42,14 @@ type SuperBlock struct {
 	Checksum     int32
 }
 
-func NewFilesystem(device *os.File, size int32, offset int32) Filesystem {
-	return Filesystem{
+func NewFilesystem(device *os.File, size int32, offset int32) *Filesystem {
+	fs := &Filesystem{
 		device: device,
 		size:   size,
 		offset: offset,
 	}
+	fs.InitSuperBlock()
+	return fs
 }
 
 func NewSuperBlock(bb BasicBlock) SuperBlock {
@@ -56,23 +59,19 @@ func NewSuperBlock(bb BasicBlock) SuperBlock {
 	return sb
 }
 
-func (fs Filesystem) SuperBlock() *SuperBlock {
-	if fs.sb == nil {
-		bb := BasicBlock{}
-		fs.device.ReadAt(bb[:], int64((fs.offset+1)*BlockSize))
-		sb := NewSuperBlock(bb)
-		fs.sb = &sb
-	}
-	return fs.sb
+func (fs *Filesystem) InitSuperBlock() {
+	bb := BasicBlock{}
+	fs.device.ReadAt(bb[:], int64((fs.offset+1)*BlockSize))
+	sb := NewSuperBlock(bb)
+	fs.sb = &sb
 }
 
-func (fs Filesystem) FirstCG() CylinderGroup {
-	sb := fs.SuperBlock()
-	blocks := make([]BasicBlock, sb.CGSize)
+func (fs *Filesystem) FirstCG() CylinderGroup {
+	blocks := make([]BasicBlock, fs.sb.CGSize)
 
-	for i := 0; i < int(sb.CGSize); i++ {
+	for i := 0; i < int(fs.sb.CGSize); i++ {
 		bb := BasicBlock{}
-		offset := int64((fs.offset + sb.FirstCG + int32(i)) * BlockSize)
+		offset := int64((fs.offset + fs.sb.FirstCG + int32(i)) * BlockSize)
 		fs.device.ReadAt(bb[:], offset)
 		blocks[i] = bb
 	}
@@ -80,31 +79,30 @@ func (fs Filesystem) FirstCG() CylinderGroup {
 	return fs.NewCylinderGroup(blocks)
 }
 
-func (fs Filesystem) InodeForIndex(inodeIndex int32) Inode {
-	sb := fs.SuperBlock()
+func (fs *Filesystem) InodeForIndex(inodeIndex int32) Inode {
 	inodesPerBB := int32(4)
-	inodeBlocksPerCG := int32(sb.CGInodeSize)
+	inodeBlocksPerCG := int32(fs.sb.CGInodeSize)
 	inodeCGIndex := inodeIndex / (inodeBlocksPerCG * inodesPerBB)
 	inodeBBinCG := inodeIndex % (inodeBlocksPerCG * inodesPerBB) / inodesPerBB
-	bbIndex := sb.FirstCG + inodeCGIndex*sb.CGSize + inodeBBinCG
+	bbIndex := fs.sb.FirstCG + inodeCGIndex*fs.sb.CGSize + inodeBBinCG
 	bb := fs.BlockAt(bbIndex)
 
 	offsetInBB := inodeIndex & (inodesPerBB - 1)
 	return bb.ToInodes()[offsetInBB]
 }
 
-func (fs Filesystem) RootInode() Inode {
+func (fs *Filesystem) RootInode() Inode {
 	return fs.InodeForIndex(2)
 }
 
-func (fs Filesystem) NewCylinderGroup(blocks []BasicBlock) CylinderGroup {
+func (fs *Filesystem) NewCylinderGroup(blocks []BasicBlock) CylinderGroup {
 	return CylinderGroup{
 		blocks: blocks,
-		fs:     &fs,
+		fs:     fs,
 	}
 }
 
-func (fs Filesystem) BlockAt(index int32) BasicBlock {
+func (fs *Filesystem) BlockAt(index int32) BasicBlock {
 	rawOffset := int64((fs.offset + index) * BlockSize)
 	bb := BasicBlock{}
 	fs.device.ReadAt(bb[:], rawOffset)
@@ -112,7 +110,7 @@ func (fs Filesystem) BlockAt(index int32) BasicBlock {
 	return bb
 }
 
-func (fs Filesystem) BlocksAt(index int32, length int32) []BasicBlock {
+func (fs *Filesystem) BlocksAt(index int32, length int32) []BasicBlock {
 	blocks := make([]BasicBlock, length)
 	for i := 0; i < int(length); i++ {
 		blocks[i] = fs.BlockAt(index + int32(i))
@@ -121,11 +119,11 @@ func (fs Filesystem) BlocksAt(index int32, length int32) []BasicBlock {
 	return blocks
 }
 
-func (fs Filesystem) WalkTree(in Inode, prefix string, callback func(Inode, string)) {
+func (fs *Filesystem) WalkTree(in Inode, prefix string, callback func(Inode, string)) {
 	switch in.Type() {
 	case FileTypeDirectory:
 		dirExtents := in.Extents(fs)
-		blocks := fs.BlocksAt(int32(dirExtents[0].Block), int32(dirExtents[0].Length))
+		blocks := fs.BlocksAt(int32(dirExtents[0].StartBlock), int32(dirExtents[0].Length))
 		for _, b := range blocks {
 			for _, entry := range b.ToDirectory().Entries() {
 				if entry.Name != "." && entry.Name != ".." {
