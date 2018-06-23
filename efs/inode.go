@@ -13,49 +13,26 @@ type Inode struct {
 	NumExtents int16
 	Version    uint8
 	Spare      uint8
-	Payload    [96]byte // this is a union struct
+	// Payload is a union struct - sometimes it contains extents, but
+	// it also can contain other stuff (like link targets and device
+	// descriptors, which are not implemented here)
+	Payload [96]byte
 }
 
 const DirectExtentsLimit = 12
 
-func (in Inode) Extents(fs *Filesystem) []Extent {
-	extents := make([]Extent, in.NumExtents)
-	if in.NumExtents <= DirectExtentsLimit {
-		// if all of the extents fit inside of Payload (aka "direct extents")
-		// we have a much simpler time reading the extents
-		for i := range extents {
-			extents[i] = NewExtent(in.Payload[8*i : 8*(i+1)])
-		}
-	} else {
-		// if we have more extents than will fit in Payload, then the extents
-		// in Payload (aka "indirect extents") point to ranges of blocks that
-		// themselves contain the actual extents.
+const (
+	FileTypeFIFO            = 010
+	FileTypeCharacterDevice = 020
+	FileTypeDirectory       = 040
+	FileTypeBlockDevice     = 060
+	FileTypeRegular         = 0100
+	FileTypeSymlink         = 0120
+	FileTypeSocket          = 0140
+)
 
-		// the NumIndirectExtents field on the first indirect extent tells us how many
-		// indirect extents there are inside Payload.
-		firstIndirectExtent := NewExtent(in.Payload[0:8])
-		indirectExtents := make([]Extent, firstIndirectExtent.NumIndirectExtents)
-		indirectExtents[0] = firstIndirectExtent
-		for i := 1; i < int(indirectExtents[0].NumIndirectExtents); i++ {
-			indirectExtents[i] = NewExtent(in.Payload[8*i : 8*(i+1)])
-		}
-
-		extentsFetched := 0
-		for _, indirectExtent := range indirectExtents {
-			extentBBs := fs.BlocksAt(int32(indirectExtent.StartBlock), int32(indirectExtent.Length))
-			for _, extentBB := range extentBBs {
-				// copy respecting the length of extents saves us from
-				// accidentally including the garbage extents at the end
-				// of the last block (beyond NumExtents)
-				copy(extents[extentsFetched:], extentBB.ToExtents())
-				extentsFetched += extentsPerBlock
-			}
-		}
-	}
-
-	return extents
-}
-
+// FormatMode is the beginnings of something that could format
+// an Inode like `/bin/ls` does
 func (in Inode) FormatMode() string {
 	modeString := ""
 	switch in.Type() {
@@ -82,27 +59,34 @@ func (in Inode) Type() uint16 {
 	return in.Mode >> 9
 }
 
-const (
-	FileTypeFIFO            = 010
-	FileTypeCharacterDevice = 020
-	FileTypeDirectory       = 040
-	FileTypeBlockDevice     = 060
-	FileTypeRegular         = 0100
-	FileTypeSymlink         = 0120
-	FileTypeSocket          = 0140
-)
+func (in Inode) usesDirectExtents() bool {
+	return in.NumExtents <= DirectExtentsLimit
+}
 
-func (in Inode) FileContents(fs *Filesystem) []byte {
-	extents := in.Extents(fs)
-	fileBytes := make([]byte, in.Size)
-	blockIndex := 0
-	for _, extent := range extents {
-		blocks := fs.BlocksAt(int32(extent.StartBlock), int32(extent.Length))
-		for _, block := range blocks {
-			copy(fileBytes[BlockSize*blockIndex:], block[:])
-			blockIndex++
+// payloadExtents unpacks the extents stored in the
+// Payload field. The number of these varies based on
+// whether or not we're using Direct Extents or not
+func (in Inode) payloadExtents() []Extent {
+	var extents []Extent
+
+	if in.usesDirectExtents() {
+		// the number of payload extents is just "all the
+		// extents" if this inode uses Direct Extents
+		extents = make([]Extent, in.NumExtents)
+		for i := range extents {
+			extents[i] = NewExtent(in.Payload[8*i : 8*(i+1)])
+		}
+	} else {
+		// the number of payload extents is contained in the
+		// NumIndirectExtents field of the first payload extent
+		// if we're using indirect extents
+		firstExtent := NewExtent(in.Payload[0:8])
+		extents = make([]Extent, firstExtent.NumIndirectExtents)
+		extents[0] = firstExtent
+		for i := 1; i < int(extents[0].NumIndirectExtents); i++ {
+			extents[i] = NewExtent(in.Payload[8*i : 8*(i+1)])
 		}
 	}
 
-	return fileBytes
+	return extents
 }
