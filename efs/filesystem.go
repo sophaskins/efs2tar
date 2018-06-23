@@ -120,3 +120,21 @@ func (fs Filesystem) BlocksAt(index int32, length int32) []BasicBlock {
 
 	return blocks
 }
+
+func (fs Filesystem) WalkTree(in Inode, prefix string, callback func(Inode, string)) {
+	switch in.Type() {
+	case FileTypeDirectory:
+		dirExtents := in.Extents(fs)
+		blocks := fs.BlocksAt(int32(dirExtents[0].Block), int32(dirExtents[0].Length))
+		for _, b := range blocks {
+			for _, entry := range b.ToDirectory().Entries() {
+				if entry.Name != "." && entry.Name != ".." {
+					fs.WalkTree(fs.InodeForIndex(int32(entry.InodeIndex)), prefix+"/"+entry.Name, callback)
+				}
+			}
+		}
+		fallthrough
+	default:
+		callback(in, prefix)
+	}
+}
