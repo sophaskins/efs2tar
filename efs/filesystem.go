@@ -50,7 +50,7 @@ func NewFilesystem(device *os.File, size int32, offset int32) *Filesystem {
 }
 
 func (fs *Filesystem) WalkFilesystem(callback func(Inode, string)) {
-	fs.walkTree(fs.rootInode(), "", callback)
+	fs.walkTree(fs.RootInode(), "", callback)
 }
 
 func (fs *Filesystem) ExtentToBlocks(e Extent) []BasicBlock {
@@ -76,7 +76,7 @@ func (fs *Filesystem) FileContents(in Inode) []byte {
 }
 
 func (fs *Filesystem) extents(in Inode) []Extent {
-	payloadExtents := in.payloadExtents()
+	payloadExtents := in.PayloadExtents()
 	if in.usesDirectExtents() {
 		// if all of the extents fit inside of Payload (aka "direct extents")
 		// we have a much simpler time reading the extents
@@ -145,7 +145,7 @@ func (fs *Filesystem) inodeForIndex(inodeIndex int32) Inode {
 	return bb.ToInodes()[offsetInBB]
 }
 
-func (fs *Filesystem) rootInode() Inode {
+func (fs *Filesystem) RootInode() Inode {
 	return fs.inodeForIndex(2)
 }
 

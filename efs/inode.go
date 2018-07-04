@@ -66,7 +66,7 @@ func (in Inode) usesDirectExtents() bool {
 // payloadExtents unpacks the extents stored in the
 // Payload field. The number of these varies based on
 // whether or not we're using Direct Extents or not
-func (in Inode) payloadExtents() []Extent {
+func (in Inode) PayloadExtents() []Extent {
 	var extents []Extent
 
 	if in.usesDirectExtents() {
