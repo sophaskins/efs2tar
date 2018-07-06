@@ -67,6 +67,16 @@ func buildTarCallback(tw *tar.Writer, fs *efs.Filesystem) func(efs.Inode, string
 			if _, err := tw.Write([]byte(contents)); err != nil {
 				log.Fatal(err)
 			}
+		} else if in.Type() == efs.FileTypeSymlink {
+			contents := fs.FileContents(in)
+			hdr := &tar.Header{
+				Name:     path,
+				Linkname: string(contents[:int64(len(contents))]),
+				Typeflag: tar.TypeSymlink,
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }
