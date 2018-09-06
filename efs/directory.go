@@ -28,6 +28,9 @@ func (d Directory) Entries() []DirectoryEntry {
 	for i := range entries {
 		// The "slots" at the low indexes of Data tell us where the
 		// "entries" in the high indexes are
+		if (d.Data[i] == 0) {
+		  continue
+		}
 		offset := (int(d.Data[i]) << 1) - DirectoryHeaderOffset
 
 		r := bytes.NewReader(d.Data[offset:])
